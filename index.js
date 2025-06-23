@@ -83,19 +83,21 @@ app.post('/send-welcome', (req, res) => {
         return res.status(400).json({ success: false, message: "Name and Email are required." });
     }
 
-    const mailOptions = {
-        from: `"Fragments of Me" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: `Welcome to Fragments of Me, ${name}!`,
-        html: `
-            <div style="font-family: sans-serif; padding: 16px;">
-                <h2>Welcome, ${name} 🌿</h2>
-                <p>Thank you for joining <strong>Fragments of Me</strong> — your quiet place for thoughts, poetry, and personal fragments.</p>
-                <p>We’re glad you’re here. Feel free to explore, write, and reflect.</p>
-                <p style="margin-top: 20px;">Warmly,<br/>Salik</p>
-            </div>
-        `,
-    };
+   const mailOptions = {
+  from: process.env.EMAIL_USER,
+  to: email,
+  subject: `Welcome to Fragments of Me, ${name}! 💖`,
+  html: `
+    <div style="font-family: 'Georgia', serif; color: #3c2f2f;">
+      <h2 style="color: #a97142;">Hey ${name},</h2>
+      <p>Welcome to <strong>Fragments of Me</strong> — a place where stories, thoughts, and emotions come alive.</p>
+      <p>We're thrilled to have you here. Whether you're reading, reflecting, or sharing your own pieces, you're now a part of something meaningful.</p>
+      <p>Feel free to explore, comment, like, and most importantly — express.</p>
+      <p style="margin-top: 20px;">With warmth,<br/>— Salik Pirzada<br/><em>Fragments of Me</em></p>
+    </div>
+  `
+};
+
 
     transporter.sendMail(mailOptions, (error, info) => {
         if (error) {
