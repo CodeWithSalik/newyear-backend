@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
+const admin = require("firebase-admin");
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -108,6 +109,43 @@ app.post('/send-welcome', (req, res) => {
         res.json({ success: true, message: "Welcome email sent successfully." });
     });
 });
+
+router.post("/send-broadcast", async (req, res) => {
+  const { subject, message } = req.body;
+
+  try {
+    const usersSnapshot = await admin.firestore().collection("users").get();
+    const emails = usersSnapshot.docs
+      .map(doc => doc.data().email)
+      .filter(email => typeof email === "string" && email.includes("@"));
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    await Promise.all(
+      emails.map(email =>
+        transporter.sendMail({
+          from: `"Fragments of Me" <${process.env.EMAIL_USER}>`,
+          to: email,
+          subject,
+          text: message,
+        })
+      )
+    );
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Broadcast error:", error);
+    res.status(500).json({ error: "Failed to send email notifications." });
+  }
+});
+
+module.exports = router;
 
 app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
