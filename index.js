@@ -5,6 +5,12 @@ const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
 const admin = require("firebase-admin");
+const serviceAccount = require("./serviceAccountKey.json"); // or wherever your JSON key is
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
