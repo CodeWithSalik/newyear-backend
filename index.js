@@ -110,7 +110,7 @@ app.post('/send-welcome', (req, res) => {
     });
 });
 
-router.post("/send-broadcast", async (req, res) => {
+app.post("/send-broadcast", async (req, res) => {
   const { subject, message } = req.body;
 
   try {
@@ -145,7 +145,6 @@ router.post("/send-broadcast", async (req, res) => {
   }
 });
 
-module.exports = router;
 
 app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
