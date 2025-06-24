@@ -127,9 +127,7 @@ app.post("/send-broadcast", async (req, res) => {
       .map(doc => doc.data().email)
       .filter(email => typeof email === "string" && email.includes("@"));
 
-    const recipients = testMode
-      ? ["pirzadasalik543@gmail.com"] // Test Mode: Only you
-      : allEmails;                   // Production: All users
+    const recipients = allEmails;                   // Production: All users
 
     await Promise.all(
       recipients.map(email =>
