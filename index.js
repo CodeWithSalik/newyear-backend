@@ -148,6 +148,47 @@ app.post("/send-broadcast", async (req, res) => {
     res.status(500).json({ error: "Failed to send email notifications." });
   }
 });
+app.post("/reply-to-comment", async (req, res) => {
+  const { entryId, commentId, replyContent, authorId, replierName } = req.body;
+
+  const commentRef = admin.firestore()
+    .collection("entries")
+    .doc(entryId)
+    .collection("comments")
+    .doc(commentId);
+
+  const commentSnap = await commentRef.get();
+  const commentData = commentSnap.data();
+
+  if (!commentData || !commentData.authorEmail) {
+    return res.status(400).json({ success: false, message: "Original comment author not found." });
+  }
+
+  // ✅ Add reply to Firestore
+  await commentRef.collection("replies").add({
+    content: replyContent,
+    authorId,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  // ✅ Send Email Notification
+  await resend.emails.send({
+    from: 'Fragments of Me <onboarding@resend.dev>',
+    to: commentData.authorEmail,
+    subject: `💬 New reply on your comment`,
+    html: `
+      <p>Hi there,</p>
+      <p><strong>${replierName}</strong> replied to your comment:</p>
+      <blockquote>${replyContent}</blockquote>
+      <p><a href="https://fragmants-of-me.vercel.app/entry/${entryId}">View the discussion</a></p>
+      <br/>
+      <p>— Fragmants of Me</p>
+    `
+  });
+
+  res.json({ success: true, message: "Reply posted and email sent." });
+});
+
 
 // ✅ Start Server
 app.listen(port, () => {
