@@ -1,4 +1,5 @@
-require('dotenv').config();
+require('dotenv').config({ path: '.env.local' });
+
 const express = require('express');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
@@ -31,7 +32,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 📮 Route 1: New Year Wish (still using Gmail)
+// 📮 Route 1: New Year Wish
 app.post('/send-email', (req, res) => {
   const { name, wish, deviceInfo, imageCaptured } = req.body;
 
@@ -71,7 +72,7 @@ app.post('/send-email', (req, res) => {
         <p>User Agent: ${deviceInfo.userAgent}</p>
         <p>Platform: ${deviceInfo.platform}</p>
         <p>Language: ${deviceInfo.language}</p>` : ''
-      }
+    }
     `,
     attachments: imageAttachment ? [imageAttachment] : [],
   };
@@ -86,7 +87,7 @@ app.post('/send-email', (req, res) => {
   });
 });
 
-// 📮 Route 2: Welcome Email (still using Gmail)
+// 📮 Route 2: Welcome Email
 app.post('/send-welcome', (req, res) => {
   const { name, email } = req.body;
   if (!name || !email) {
@@ -117,80 +118,120 @@ app.post('/send-welcome', (req, res) => {
   });
 });
 
-// 📮 Route 3: Broadcast to all users (via Resend)
+// 📮 Route 3: Broadcast
+// 📮 Route 3: Broadcast to all users (via Gmail)
 app.post("/send-broadcast", async (req, res) => {
   const { subject, message, testMode } = req.body;
+  console.log("📦 Received broadcast payload:", req.body);
 
   try {
+    // 🔍 Fetch all user emails from Firestore
     const usersSnapshot = await admin.firestore().collection("users").get();
     const allEmails = usersSnapshot.docs
       .map(doc => doc.data().email)
       .filter(email => typeof email === "string" && email.includes("@"));
 
-    const recipients = allEmails;                   // Production: All users
+    // 👤 If testMode is enabled, send only to yourself
+    const recipients = testMode
+      ? [process.env.RECIPIENT_EMAIL]
+      : allEmails;
 
-    await Promise.all(
+    console.log(`📤 Sending broadcast to ${recipients.length} users...`);
+
+    // 📬 Send individual emails using nodemailer
+    const results = await Promise.allSettled(
       recipients.map(email =>
-        resend.emails.send({
-          from: 'Fragments of Me <onboarding@resend.dev>',
-          to: email,
+        transporter.sendMail({
+          from: `"Fragments of Me" <${process.env.EMAIL_USER}>`,
+          to: email, //email
           subject,
-          html: `<p>${message}</p>`,
+          html: `
+            <div style="font-family: Georgia, serif; color: #3c2f2f; line-height: 1.6;">
+              <p>${message}</p>
+              <br/>
+              <p style="color:#999;">— Fragments of Me</p>
+            </div>
+          `,
         })
       )
     );
 
-    console.log(`✅ Broadcast emails sent to ${recipients.length} recipient(s).`);
+    const failed = results.filter(r => r.status === "rejected").length;
+    const success = results.length - failed;
 
-    res.status(200).json({ success: true, recipients: recipients.length });
+    console.log(`✅ Broadcast completed: ${success} sent, ${failed} failed.`);
+    res.status(200).json({ success: true, sent: success, failed });
   } catch (error) {
     console.error("❌ Broadcast error:", error);
-    res.status(500).json({ error: "Failed to send email notifications." });
+    res.status(500).json({ success: false, message: "Failed to send broadcast emails." });
   }
 });
+
+// 📮 Route 4: Reply to Comment (with Resend email)
 app.post("/reply-to-comment", async (req, res) => {
-  const { entryId, commentId, replyContent, authorId, replierName } = req.body;
+  try {
+    const { entryId, commentId, replyContent, replierName, authorId } = req.body;
 
-  const commentRef = admin.firestore()
-    .collection("entries")
-    .doc(entryId)
-    .collection("comments")
-    .doc(commentId);
+    if (!entryId || !commentId || !replyContent || !replierName || !authorId) {
+      console.warn("❌ Missing required fields:", req.body);
+      return res.status(400).json({ success: false, message: "Missing required fields." });
+    }
 
-  const commentSnap = await commentRef.get();
-  const commentData = commentSnap.data();
+    console.log("📩 Received reply payload:", req.body);
 
-  if (!commentData || !commentData.authorEmail) {
-    return res.status(400).json({ success: false, message: "Original comment author not found." });
+    const commentRef = admin
+      .firestore()
+      .collection("entries")
+      .doc(entryId)
+      .collection("comments")
+      .doc(commentId);
+
+    const commentSnap = await commentRef.get();
+    const commentData = commentSnap.data();
+
+    if (!commentData) {
+      console.warn("❌ Original comment not found");
+      return res.status(404).json({ success: false, message: "Comment not found." });
+    }
+
+    const replyPayload = {
+      content: replyContent.trim(),
+      authorId,
+      authorName: replierName,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // ✅ Save the reply
+    await commentRef.collection("replies").add(replyPayload);
+    console.log("✅ Reply added to Firestore");
+
+    // Don't send email if replying to self
+    if (commentData.authorId === authorId) {
+      console.log("👤 Reply to self — no email sent.");
+      return res.json({ success: true, message: "Reply added (no email sent)" });
+    }
+
+    // ✅ Send email
+    const emailRes = await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: commentData.authorEmail,
+      subject: `💬 New reply from ${replierName}`,
+      html: `
+        <p><strong>${replierName}</strong> replied to your comment:</p>
+        <blockquote>${replyContent}</blockquote>
+        <p><a href="https://fragments-of-me.vercel.app/entry/${entryId}">View conversation</a></p>
+      `,
+    });
+
+    console.log("✅ Email sent successfully:", emailRes.response);
+    return res.json({ success: true, message: "Reply saved and email sent." });
+
+  } catch (error) {
+    console.error("❌ Error in /reply-to-comment:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
-
-  // ✅ Add reply to Firestore
-  await commentRef.collection("replies").add({
-    content: replyContent,
-    authorId,
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  // ✅ Send Email Notification
-  await resend.emails.send({
-    from: 'Fragments of Me <onboarding@resend.dev>',
-    to: commentData.authorEmail,
-    subject: `💬 New reply on your comment`,
-    html: `
-      <p>Hi there,</p>
-      <p><strong>${replierName}</strong> replied to your comment:</p>
-      <blockquote>${replyContent}</blockquote>
-      <p><a href="https://fragmants-of-me.vercel.app/entry/${entryId}">View the discussion</a></p>
-      <br/>
-      <p>— Fragmants of Me</p>
-    `
-  });
-
-  res.json({ success: true, message: "Reply posted and email sent." });
 });
-
-
-// ✅ Start Server
+// ✅ Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
 });
