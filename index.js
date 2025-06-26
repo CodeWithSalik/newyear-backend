@@ -32,6 +32,10 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
 // 📮 Route 1: New Year Wish
 app.post('/send-email', (req, res) => {
   const { name, wish, deviceInfo, imageCaptured } = req.body;
