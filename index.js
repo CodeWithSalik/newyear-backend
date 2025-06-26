@@ -6,6 +6,8 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 const { Resend } = require('resend');
 const serviceAccount = require('./serviceAccountKey.json');
+const { getFirestore } = require("firebase-admin/firestore");
+
 
 const app = express();
 const port = process.env.PORT || 4400;
@@ -235,6 +237,69 @@ app.post("/reply-to-comment", async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error." });
   }
 });
+
+app.post("/send-newsletter", async (req, res) => {
+  const { subject, message, testMode } = req.body;
+  console.log("🗞️ Received newsletter request:", req.body);
+
+  try {
+    // 🔥 Get Firestore
+    const db = admin.firestore(); // or use getFirestore() if not using admin.firestore()
+
+    // 🧠 Get all registered user emails
+    const usersSnap = await db.collection("users").get();
+    const allEmails = usersSnap.docs
+      .map(doc => doc.data().email)
+      .filter(email => typeof email === "string" && email.includes("@"));
+
+    if (!allEmails.length) {
+      return res.status(400).json({ success: false, error: "No valid emails found." });
+    }
+
+    // 🧪 Test mode logic: only email yourself
+    const recipients = testMode
+      ? [process.env.RECIPIENT_EMAIL]
+      : allEmails;
+
+    console.log(`📤 Sending newsletter to ${recipients.length} users...`);
+
+    // 📬 Send individually to each recipient
+    const results = await Promise.allSettled(
+      recipients.map(email =>
+        transporter.sendMail({
+          from: `"Fragments of Me" <${process.env.EMAIL_USER}>`,
+          to: email,
+          subject,
+          html: `
+            <div style="font-family: Georgia, serif; color: #3c2f2f; line-height: 1.6;">
+              ${message}
+              <br/><br/>
+              <p style="font-size:13px; color:yellow;">— Fragments of Me - @CodeWithSalik</p>
+            </div>
+          `,
+        })
+      )
+    );
+
+    const failed = results.filter(r => r.status === "rejected");
+    const sentCount = results.length - failed.length;
+
+    console.log(`✅ Sent: ${sentCount}, ❌ Failed: ${failed.length}`);
+
+    res.json({
+      success: true,
+      sent: sentCount,
+      failed: failed.length,
+      errors: failed.map(e => e.reason.message),
+    });
+
+  } catch (err) {
+    console.error("❌ Newsletter error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 // ✅ Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
