@@ -183,8 +183,6 @@ app.post("/reply-to-comment", async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing required fields." });
     }
 
-    console.log("📩 Received reply payload:", req.body);
-
     const commentRef = admin
       .firestore()
       .collection("entries")
@@ -196,7 +194,6 @@ app.post("/reply-to-comment", async (req, res) => {
     const commentData = commentSnap.data();
 
     if (!commentData) {
-      console.warn("❌ Original comment not found");
       return res.status(404).json({ success: false, message: "Comment not found." });
     }
 
@@ -207,31 +204,32 @@ app.post("/reply-to-comment", async (req, res) => {
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    // ✅ Save the reply
     await commentRef.collection("replies").add(replyPayload);
     console.log("✅ Reply added to Firestore");
 
-    // Don't send email if replying to self
-    if (commentData.authorId === authorId) {
-      console.log("👤 Reply to self — no email sent.");
-      return res.json({ success: true, message: "Reply added (no email sent)" });
+    // Don't send email to self or missing email
+    if (commentData.authorId === authorId || !commentData.authorEmail) {
+      console.log("📭 No email sent (self-reply or missing email)");
+      return res.json({ success: true, message: "Reply added (no email sent)." });
     }
 
-    // ✅ Send email
-    const emailRes = await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: commentData.authorEmail,
-      subject: `💬 New reply from ${replierName}`,
-      html: `
-        <p><strong>${replierName}</strong> replied to your comment:</p>
-        <blockquote>${replyContent}</blockquote>
-        <p><a href="https://fragments-of-me.vercel.app/entry/${entryId}">View conversation</a></p>
-      `,
-    });
+    try {
+      const emailRes = await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: commentData.authorEmail,
+        subject: `💬 New reply from ${replierName}`,
+        html: `
+          <p><strong>${replierName}</strong> replied to your comment:</p>
+          <blockquote>${replyContent}</blockquote>
+          <p><a href="https://fragments-of-me.vercel.app/entry/${entryId}">View conversation</a></p>
+        `,
+      });
+      console.log("✅ Email sent:", emailRes.response);
+    } catch (emailErr) {
+      console.error("❌ Email send failed:", emailErr);
+    }
 
-    console.log("✅ Email sent successfully:", emailRes.response);
     return res.json({ success: true, message: "Reply saved and email sent." });
-
   } catch (error) {
     console.error("❌ Error in /reply-to-comment:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
