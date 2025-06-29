@@ -272,7 +272,7 @@ app.post("/send-newsletter", async (req, res) => {
             <div style="font-family: Georgia, serif; color: #3c2f2f; line-height: 1.6;">
               ${message}
               <br/><br/>
-              <p style="font-size:13px; color:yellow;">— Fragments of Me - @CodeWithSalik</p>
+              <p style="font-size:13px; color:#8a4a1f;">— Fragments of Me - @CodeWithSalik</p>
             </div>
           `,
         })
