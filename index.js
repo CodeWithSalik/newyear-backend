@@ -241,10 +241,7 @@ app.post("/send-newsletter", async (req, res) => {
   console.log("🗞️ Received newsletter request:", req.body);
 
   try {
-    // 🔥 Get Firestore
-    const db = admin.firestore(); // or use getFirestore() if not using admin.firestore()
-
-    // 🧠 Get all registered user emails
+    const db = admin.firestore();
     const usersSnap = await db.collection("users").get();
     const allEmails = usersSnap.docs
       .map(doc => doc.data().email)
@@ -254,17 +251,17 @@ app.post("/send-newsletter", async (req, res) => {
       return res.status(400).json({ success: false, error: "No valid emails found." });
     }
 
-    // 🧪 Test mode logic: only email yourself
-    const recipients = testMode
-      ? [process.env.RECIPIENT_EMAIL]
-      : allEmails;
-
+    // Test mode: send only to yourself
+    const recipients = testMode ? [process.env.RECIPIENT_EMAIL] : allEmails;
     console.log(`📤 Sending newsletter to ${recipients.length} users...`);
 
-    // 📬 Send individually to each recipient
-    const results = await Promise.allSettled(
-      recipients.map(email =>
-        transporter.sendMail({
+    let sentCount = 0;
+    let failedEmails = [];
+
+    // Send sequentially
+    for (const email of recipients) {
+      try {
+        await transporter.sendMail({
           from: `"Fragments of Me" <${process.env.EMAIL_USER}>`,
           to: email,
           subject,
@@ -275,27 +272,24 @@ app.post("/send-newsletter", async (req, res) => {
               <p style="font-size:13px; color:#8a4a1f;">— Fragments of Me - @CodeWithSalik</p>
             </div>
           `,
-        })
-      )
-    );
+        });
+        sentCount++;
+        console.log(`✅ Email sent to ${email}`);
+      } catch (err) {
+        console.error(`❌ Failed to send to ${email}:`, err.message);
+        failedEmails.push({ email, error: err.message });
+      }
+    }
 
-    const failed = results.filter(r => r.status === "rejected");
-    const sentCount = results.length - failed.length;
-
-    console.log(`✅ Sent: ${sentCount}, ❌ Failed: ${failed.length}`);
-
-    res.json({
-      success: true,
-      sent: sentCount,
-      failed: failed.length,
-      errors: failed.map(e => e.reason.message),
-    });
+    console.log(`✅ Sent: ${sentCount}, ❌ Failed: ${failedEmails.length}`);
+    res.json({ success: true, sent: sentCount, failed: failedEmails.length, errors: failedEmails });
 
   } catch (err) {
     console.error("❌ Newsletter error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 
 // ✅ Start server
