@@ -27,11 +27,17 @@ app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 
 // ✅ Gmail Transport (for legacy routes)
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+   host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // use TLS
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    pass: process.env.EMAIL_PASS, // App password if 2FA is enabled
   },
+  tls: {
+    rejectUnauthorized: false
+  },
+  connectionTimeout: 10000, // 10 seconds
 });
 
 app.get("/", (req, res) => {
